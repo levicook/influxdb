@@ -49,7 +49,7 @@ func execRun(args []string) {
 	initializing := !hasBroker && !hasServer
 
 	// Open broker if it exists or if we're initializing for the first time.
-	var b *messaging.Broker
+	var b *influxdb.Broker
 	var h *Handler
 	if hasBroker || (initializing && (*role == "combined" || *role == "broker")) {
 		b = openBroker(config.Broker.Dir, config.BrokerConnectionString())
@@ -161,8 +161,8 @@ func parseConfig(path, hostname string) *Config {
 }
 
 // creates and initializes a broker at a given path.
-func openBroker(path, addr string) *messaging.Broker {
-	b := messaging.NewBroker()
+func openBroker(path, addr string) *influxdb.Broker {
+	b := influxdb.NewBroker()
 	if err := b.Open(path, addr); err != nil {
 		log.Fatalf("failed to open broker: %s", err)
 	}
@@ -179,7 +179,7 @@ func openServer(path string) *influxdb.Server {
 }
 
 // initializes a new server that does not yet have an ID.
-func initServer(s *influxdb.Server, b *messaging.Broker) {
+func initServer(s *influxdb.Server, b *influxdb.Broker) {
 	// TODO: Change messaging client to not require a ReplicaID so we can create
 	// a replica without already being a replica.
 
