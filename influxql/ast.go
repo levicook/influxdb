@@ -295,7 +295,8 @@ func (s *DropUserStatement) String() string {
 type Privilege int
 
 const (
-	ReadPrivilege Privilege = iota
+	NoPrivileges Privilege = iota
+	ReadPrivilege
 	WritePrivilege
 	AllPrivileges
 )

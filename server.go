@@ -1795,13 +1795,21 @@ var BcryptCost = 10
 type User struct {
 	Name  string `json:"name"`
 	Hash  string `json:"hash"`
-	Admin bool   `json:"admin,omitempty"`
+	// dbname to privilege
+	Privileges map[string]influxql.Privilege `json:"privileges"`
+	Admin bool   `json:"admin"`
 }
 
 // Authenticate returns nil if the password matches the user's password.
 // Returns an error if the password was incorrect.
 func (u *User) Authenticate(password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(u.Hash), []byte(password))
+}
+
+// Authorize returns true if the user is authorized and false if not.
+func (u *User) Authorize(database string, privilege influxql.Privilege) bool {
+	p, ok := u.Privileges[database]
+	return ok && p >= privilege
 }
 
 // users represents a list of users, sortable by name.
