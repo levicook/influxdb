@@ -641,9 +641,6 @@ func MatchSource(src Source, name string) string {
 
 // Target represents a target (destination) policy, measurment, and DB.
 type Target struct {
-	// Retention policy to write into.
-	RetentionPolicy string
-
 	// Measurement to write into.
 	Measurement string
 
@@ -655,12 +652,6 @@ type Target struct {
 func (t *Target) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("INTO ")
-
-	if t.RetentionPolicy != "" {
-		_, _ = buf.WriteString(t.RetentionPolicy)
-		_, _ = buf.WriteString(".")
-	}
-
 	_, _ = buf.WriteString(t.Measurement)
 
 	if t.Database != "" {
@@ -1030,7 +1021,7 @@ func (f *Field) String() string {
 	if f.Alias == "" {
 		return f.Expr.String()
 	}
-	return fmt.Sprintf("%s AS %s", f.Expr.String(), QuoteIdent(f.Alias))
+	return fmt.Sprintf("%s AS %s", f.Expr.String(), f.Alias)
 }
 
 // Dimensions represents a list of dimensions.
@@ -1071,7 +1062,7 @@ type Measurement struct {
 }
 
 // String returns a string representation of the measurement.
-func (m *Measurement) String() string { return QuoteIdent(m.Name) }
+func (m *Measurement) String() string { return m.Name }
 
 // Join represents two datasources joined together.
 type Join struct {
@@ -1099,7 +1090,7 @@ type VarRef struct {
 }
 
 // String returns a string representation of the variable reference.
-func (r *VarRef) String() string { return QuoteIdent(r.Val) }
+func (r *VarRef) String() string { return r.Val }
 
 // Call represents a function call.
 type Call struct {
@@ -1146,7 +1137,7 @@ type StringLiteral struct {
 }
 
 // String returns a string representation of the literal.
-func (l *StringLiteral) String() string { return Quote(l.Val) }
+func (l *StringLiteral) String() string { return QuoteString(l.Val) }
 
 // TimeLiteral represents a point-in-time literal.
 type TimeLiteral struct {

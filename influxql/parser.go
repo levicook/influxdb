@@ -1,6 +1,7 @@
 package influxql
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -191,7 +192,7 @@ func (p *Parser) parseCreateRetentionPolicyStatement() (*CreateRetentionPolicySt
 	stmt := &CreateRetentionPolicyStatement{}
 
 	// Parse the retention policy name.
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +204,7 @@ func (p *Parser) parseCreateRetentionPolicyStatement() (*CreateRetentionPolicySt
 	}
 
 	// Parse the database name.
-	ident, err = p.parseIdentifier()
+	ident, err = p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +251,7 @@ func (p *Parser) parseAlterRetentionPolicyStatement() (*AlterRetentionPolicyStat
 	stmt := &AlterRetentionPolicyStatement{}
 
 	// Parse the retention policy name.
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +263,7 @@ func (p *Parser) parseAlterRetentionPolicyStatement() (*AlterRetentionPolicyStat
 	}
 
 	// Parse the database name.
-	ident, err = p.parseIdentifier()
+	ident, err = p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -341,11 +342,20 @@ func (p *Parser) parseDuration() (time.Duration, error) {
 	return d, nil
 }
 
-// parserIdentifier parses a string and returns an identifier.
-func (p *Parser) parseIdentifier() (string, error) {
+// parserIdent parses an identifier.
+func (p *Parser) parseIdent() (string, error) {
 	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
+	if tok != IDENT {
 		return "", newParseError(tokstr(tok, lit), []string{"identifier"}, pos)
+	}
+	return lit, nil
+}
+
+// parserString parses a string.
+func (p *Parser) parseString() (string, error) {
+	tok, pos, lit := p.scanIgnoreWhitespace()
+	if tok != STRING {
+		return "", newParseError(tokstr(tok, lit), []string{"string"}, pos)
 	}
 	return lit, nil
 }
@@ -366,9 +376,9 @@ func (p *Parser) parseRevokeStatement() (*RevokeStatement, error) {
 	tok, pos, lit := p.scanIgnoreWhitespace()
 	if tok == ON {
 		// Parse the name of the thing we're granting a privilege to use.
-		tok, pos, lit = p.scanIgnoreWhitespace()
-		if tok != IDENT && tok != STRING {
-			return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+		lit, err := p.parseIdent()
+		if err != nil {
+			return nil, err
 		}
 		stmt.On = lit
 
@@ -385,9 +395,9 @@ func (p *Parser) parseRevokeStatement() (*RevokeStatement, error) {
 	}
 
 	// Parse the name of the user we're granting the privilege to.
-	tok, pos, lit = p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+	lit, err = p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.User = lit
 
@@ -410,9 +420,9 @@ func (p *Parser) parseGrantStatement() (*GrantStatement, error) {
 	tok, pos, lit := p.scanIgnoreWhitespace()
 	if tok == ON {
 		// Parse the name of the thing we're granting a privilege to use.
-		tok, pos, lit = p.scanIgnoreWhitespace()
-		if tok != IDENT && tok != STRING {
-			return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+		lit, err := p.parseIdent()
+		if err != nil {
+			return nil, err
 		}
 		stmt.On = lit
 
@@ -429,9 +439,9 @@ func (p *Parser) parseGrantStatement() (*GrantStatement, error) {
 	}
 
 	// Parse the name of the user we're granting the privilege to.
-	tok, pos, lit = p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+	lit, err = p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.User = lit
 
@@ -537,27 +547,12 @@ func (p *Parser) parseTarget(tr targetRequirement) (*Target, error) {
 	}
 
 	// Parse identifier.  Could be policy or measurement name.
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
 
 	target := &Target{}
-
-	tok, _, _ := p.scanIgnoreWhitespace()
-	if tok == DOT {
-		// Previous identifier was retention policy name.
-		target.RetentionPolicy = ident
-
-		// Parse required measurement.
-		ident, err = p.parseIdentifier()
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.unscan()
-	}
-
 	target.Measurement = ident
 
 	// Parse optional ON.
@@ -567,7 +562,7 @@ func (p *Parser) parseTarget(tr targetRequirement) (*Target, error) {
 	}
 
 	// Found an ON token so parse required identifier.
-	if ident, err = p.parseIdentifier(); err != nil {
+	if ident, err = p.parseIdent(); err != nil {
 		return nil, err
 	}
 	target.Database = ident
@@ -663,7 +658,7 @@ func (p *Parser) parseListMeasurementsStatement() (*ListMeasurementsStatement, e
 func (p *Parser) parseListRetentionPoliciesStatement() (*ListRetentionPoliciesStatement, error) {
 	stmt := &ListRetentionPoliciesStatement{}
 
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -840,9 +835,9 @@ func (p *Parser) parseDropSeriesStatement() (*DropSeriesStatement, error) {
 	stmt := &DropSeriesStatement{}
 
 	// Read the name of the series to drop.
-	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+	lit, err := p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.Name = lit
 
@@ -880,7 +875,7 @@ func (p *Parser) parseCreateContinuousQueryStatement() (*CreateContinuousQuerySt
 	}
 
 	// Read the id of the query to create.
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -892,7 +887,7 @@ func (p *Parser) parseCreateContinuousQueryStatement() (*CreateContinuousQuerySt
 	}
 
 	// Read the name of the database to create the query on.
-	if ident, err = p.parseIdentifier(); err != nil {
+	if ident, err = p.parseIdent(); err != nil {
 		return nil, err
 	}
 	stmt.Database = ident
@@ -923,9 +918,9 @@ func (p *Parser) parseCreateDatabaseStatement() (*CreateDatabaseStatement, error
 	stmt := &CreateDatabaseStatement{}
 
 	// Parse the name of the database to be created.
-	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier"}, pos)
+	lit, err := p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.Name = lit
 
@@ -938,9 +933,9 @@ func (p *Parser) parseDropDatabaseStatement() (*DropDatabaseStatement, error) {
 	stmt := &DropDatabaseStatement{}
 
 	// Parse the name of the database to be dropped.
-	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier"}, pos)
+	lit, err := p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.Name = lit
 
@@ -953,7 +948,7 @@ func (p *Parser) parseDropRetentionPolicyStatement() (*DropRetentionPolicyStatem
 	stmt := &DropRetentionPolicyStatement{}
 
 	// Parse the policy name.
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -965,7 +960,7 @@ func (p *Parser) parseDropRetentionPolicyStatement() (*DropRetentionPolicyStatem
 	}
 
 	// Parse the database name.
-	if stmt.Database, err = p.parseIdentifier(); err != nil {
+	if stmt.Database, err = p.parseIdent(); err != nil {
 		return nil, err
 	}
 
@@ -978,7 +973,7 @@ func (p *Parser) parseCreateUserStatement() (*CreateUserStatement, error) {
 	stmt := &CreateUserStatement{}
 
 	// Parse name of the user to be created.
-	ident, err := p.parseIdentifier()
+	ident, err := p.parseIdent()
 	if err != nil {
 		return nil, err
 	}
@@ -990,7 +985,7 @@ func (p *Parser) parseCreateUserStatement() (*CreateUserStatement, error) {
 	}
 
 	// Parse new user's password
-	if ident, err = p.parseIdentifier(); err != nil {
+	if ident, err = p.parseString(); err != nil {
 		return nil, err
 	}
 	stmt.Password = ident
@@ -1017,9 +1012,9 @@ func (p *Parser) parseDropUserStatement() (*DropUserStatement, error) {
 	stmt := &DropUserStatement{}
 
 	// Parse the name of the user to be dropped.
-	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier"}, pos)
+	lit, err := p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.Name = lit
 
@@ -1049,9 +1044,8 @@ func (p *Parser) parseRetentionPolicy() (name string, dfault bool, err error) {
 	}
 
 	// Parse retention policy name.
-	tok, pos, name = p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		err = newParseError(tokstr(tok, name), []string{"identifier"}, pos)
+	name, err = p.parseIdent()
+	if err != nil {
 		return
 	}
 
@@ -1069,9 +1063,9 @@ func (p *Parser) parseDropContinuousQueryStatement() (*DropContinuousQueryStatem
 	}
 
 	// Read the id of the query to drop.
-	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+	lit, err := p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
 	stmt.Name = lit
 
@@ -1141,9 +1135,9 @@ func (p *Parser) parseAlias() (string, error) {
 	}
 
 	// Then we should have the alias identifier.
-	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return "", newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+	lit, err := p.parseIdent()
+	if err != nil {
+		return "", err
 	}
 	return lit, nil
 }
@@ -1152,8 +1146,8 @@ func (p *Parser) parseAlias() (string, error) {
 func (p *Parser) parseSource() (Source, error) {
 	// The first token can either be the series name or a join/merge call.
 	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != IDENT && tok != STRING {
-		return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
+	if tok != IDENT {
+		return nil, newParseError(tokstr(tok, lit), []string{"identifier"}, pos)
 	}
 
 	// If the token is a string or the next token is not an LPAREN then return a measurement.
@@ -1173,7 +1167,7 @@ func (p *Parser) parseSource() (Source, error) {
 	for {
 		// Scan the measurement name.
 		tok, pos, lit := p.scanIgnoreWhitespace()
-		if tok != IDENT && tok != STRING {
+		if tok != IDENT {
 			return nil, newParseError(tokstr(tok, lit), []string{"measurement name"}, pos)
 		}
 		measurements = append(measurements, &Measurement{Name: lit})
@@ -1613,17 +1607,24 @@ func (p *Parser) parseTokens(toks []Token) error {
 }
 
 // Quote returns a quoted string.
-func Quote(s string) string {
-	return `"` + strings.NewReplacer("\n", `\n`, `\`, `\\`, `"`, `\"`).Replace(s) + `"`
+func QuoteString(s string) string {
+	return `'` + strings.NewReplacer("\n", `\n`, `\`, `\\`, `'`, `\'`).Replace(s) + `'`
 }
 
-// QuoteIdent returns a quoted identifier if the identifier requires quoting.
-// Otherwise returns the original string passed in.
-func QuoteIdent(s string) string {
-	if s == "" || regexp.MustCompile(`[^a-zA-Z_.]`).MatchString(s) {
-		return Quote(s)
+// QuoteIdent returns a quoted identifier from multiple bare identifiers.
+func QuoteIdent(segments []string) string {
+	r := strings.NewReplacer("\n", `\n`, `\`, `\\`, `"`, `\"`)
+
+	var buf bytes.Buffer
+	for i, segment := range segments {
+		_ = buf.WriteByte('"')
+		_, _ = buf.WriteString(r.Replace(segment))
+		_ = buf.WriteByte('"')
+		if i < len(segments)-1 {
+			_ = buf.WriteByte('.')
+		}
 	}
-	return s
+	return buf.String()
 }
 
 // split splits a string into a slice of runes.
